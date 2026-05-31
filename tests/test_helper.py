@@ -85,6 +85,13 @@ def test_analyze_image_calls_ollama_with_image(tmp_path):
     assert result == 'mountain, sunset, golden hour'
 
 
+def test_check_ollama_raises_when_library_not_installed():
+    with patch('helper.ollama', None):
+        with pytest.raises(OllamaNotRunningError) as exc_info:
+            check_ollama('moondream')
+    assert 'pip install ollama' in str(exc_info.value)
+
+
 def test_check_ollama_raises_when_not_running():
     with patch('helper.ollama.list', side_effect=Exception('connection refused')):
         with pytest.raises(OllamaNotRunningError):

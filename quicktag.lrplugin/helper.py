@@ -1,7 +1,10 @@
 import argparse
 import json
 import time
-import ollama
+try:
+    import ollama
+except ImportError:
+    ollama = None  # type: ignore
 
 
 class OllamaNotRunningError(Exception):
@@ -13,6 +16,10 @@ class ModelNotFoundError(Exception):
 
 
 def check_ollama(model):
+    if ollama is None:
+        raise OllamaNotRunningError(
+            "Ollama Python library not installed. Run: pip install ollama"
+        )
     try:
         response = ollama.list()
     except Exception:

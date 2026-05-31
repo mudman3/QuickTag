@@ -205,7 +205,7 @@ local function callPython(previews, existingKeywords)
         return nil, 'Could not write temp input file.'
     end
 
-    local cmd = string.format('python "%s" --input "%s" --output "%s"', helperPath(), inputPath, outputPath)
+    local cmd = string.format('start "" /B /WAIT python "%s" --input "%s" --output "%s"', helperPath(), inputPath, outputPath)
     os.execute(cmd)
 
     for _, item in ipairs(previews) do
@@ -239,7 +239,6 @@ function Tagger.run()
     end
 
     local taggedCount = countTagged(photos)
-    local previews    = generatePreviews(photos)
 
     local config = readConfig()
     local shouldRun, includeTagged = showPreRunDialog(photos, taggedCount, config.seconds_per_image or 5)
@@ -254,9 +253,9 @@ function Tagger.run()
             end
         end
         photos = filtered
-        previews = generatePreviews(photos)
     end
 
+    local previews        = generatePreviews(photos)
     local allKeywords     = getAllKeywordNames(catalog)
     local output, callErr = callPython(previews, allKeywords)
 
@@ -267,6 +266,11 @@ function Tagger.run()
 
     if output.error then
         LrDialogs.message('QuickTag Error', output.error, 'critical')
+        return
+    end
+
+    if not output.results then
+        LrDialogs.message('QuickTag Error', 'Helper returned no results. Check quicktag.log.', 'critical')
         return
     end
 
@@ -291,6 +295,11 @@ function Tagger.run()
 
     if not ok then
         LrDialogs.message('QuickTag Error', 'Lightroom could not save keywords. Please try again.', 'critical')
+        return
+    end
+
+    if ok and taggedTotal == 0 and next(output.results) ~= nil then
+        LrDialogs.message('QuickTag Error', 'Lightroom could not save keywords — the catalog may be read-only. Please try again.', 'critical')
         return
     end
 
