@@ -26,8 +26,11 @@ def check_ollama(model):
         raise OllamaNotRunningError(
             "QuickTag couldn't connect to Ollama. Make sure Ollama is running."
         )
-    models = response.get('models', [])
-    installed = [m['name'].split(':')[0] for m in models]
+    # Newer ollama library returns a ListResponse object; older returns a dict
+    if hasattr(response, 'models'):
+        installed = [m.model.split(':')[0] for m in response.models]
+    else:
+        installed = [m['name'].split(':')[0] for m in response.get('models', [])]
     if model not in installed:
         raise ModelNotFoundError(
             f"Model '{model}' not found. Run: ollama pull {model}"
