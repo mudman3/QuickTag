@@ -207,12 +207,22 @@ local function callPython(previews, existingKeywords, config)
     end
 
     local pythonExe = config.python_path or 'python'
-    local cmd       = string.format('"%s" "%s" --input "%s" --output "%s"', pythonExe, helperPath(), inputPath, outputPath)
-    local handle = io.popen(cmd)
+    local batPath   = LrPathUtils.child(tempDir(), 'quicktag_run.bat')
+    local batFile   = io.open(batPath, 'w')
+    if not batFile then
+        return nil, 'Could not write temp batch file.'
+    end
+    batFile:write('@echo off\n')
+    batFile:write(string.format('"%s" "%s" --input "%s" --output "%s"\n',
+        pythonExe, helperPath(), inputPath, outputPath))
+    batFile:close()
+
+    local handle = io.popen('"' .. batPath .. '"')
     if handle then
         handle:read('*all')
         handle:close()
     end
+    LrFileUtils.delete(batPath)
 
     for _, item in ipairs(previews) do
         LrFileUtils.delete(item.preview_path)
