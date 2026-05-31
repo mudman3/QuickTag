@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / 'quicktag.lrplugin'))
 
-from helper import parse_args, load_input, write_output
+from helper import parse_args, load_input, write_output, build_prompt, parse_keywords
 
 
 def test_parse_args_requires_input_and_output(tmp_path):
@@ -38,3 +38,30 @@ def test_write_output_with_error(tmp_path):
     data = json.loads(out.read_text())
     assert data['error'] == 'Ollama not running'
     assert data['results'] == {}
+
+
+def test_build_prompt_injects_existing_keywords():
+    prompt = build_prompt(['mountain', 'sunset'], 20, 'Analyze {existing_keywords} max {max_keywords}')
+    assert 'mountain, sunset' in prompt
+    assert '20' in prompt
+
+
+def test_build_prompt_handles_empty_keywords():
+    prompt = build_prompt([], 15, 'list: {existing_keywords} max {max_keywords}')
+    assert 'none yet' in prompt
+    assert '15' in prompt
+
+
+def test_parse_keywords_returns_clean_list():
+    result = parse_keywords('Mountain, Golden Hour,  mist , pine forest')
+    assert result == ['mountain', 'golden hour', 'mist', 'pine forest']
+
+
+def test_parse_keywords_deduplicates():
+    result = parse_keywords('mountain, forest, mountain, tree')
+    assert result == ['mountain', 'forest', 'tree']
+
+
+def test_parse_keywords_ignores_empty_entries():
+    result = parse_keywords('mountain,,, sunset,')
+    assert result == ['mountain', 'sunset']
