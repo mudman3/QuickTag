@@ -1,8 +1,11 @@
 -- Tagger.lua
-local LrApplication = import 'LrApplication'
-local LrDialogs     = import 'LrDialogs'
-local LrPathUtils   = import 'LrPathUtils'
-local json          = require 'json'
+local LrApplication     = import 'LrApplication'
+local LrDialogs         = import 'LrDialogs'
+local LrPathUtils       = import 'LrPathUtils'
+local LrView            = import 'LrView'
+local LrBinding         = import 'LrBinding'
+local LrFunctionContext = import 'LrFunctionContext'
+local json              = require 'json'
 
 local Tagger = {}
 
@@ -113,6 +116,62 @@ local function generatePreviews(photos)
     return previews
 end
 
+local function formatTime(seconds)
+    if seconds < 60 then
+        return string.format('%d seconds', math.ceil(seconds))
+    end
+    local mins = math.floor(seconds / 60)
+    local secs = math.ceil(seconds % 60)
+    if secs == 0 then
+        return string.format('%d minute%s', mins, mins == 1 and '' or 's')
+    end
+    return string.format('%d min %d sec', mins, secs)
+end
+
+local function showPreRunDialog(photos, taggedCount, secPerImage)
+    local result, includeTagged
+
+    LrFunctionContext.callWithContext('quickTagDialog', function(context)
+        local props          = LrBinding.makePropertyTable(context)
+        props.includeTagged  = false
+        local untaggedCount  = #photos - taggedCount
+
+        local function updateEstimate()
+            local count         = props.includeTagged and #photos or untaggedCount
+            props.estimatedTime = 'Estimated time: ~' .. formatTime(count * secPerImage)
+        end
+
+        updateEstimate()
+        props:addObserver('includeTagged', context, updateEstimate)
+
+        local f        = LrView.osFactory()
+        local contents = f:column {
+            bind_to_object = props,
+            spacing        = f:dialog_spacing(),
+            f:static_text {
+                title = string.format(
+                    '%d images selected (%d already have keywords)',
+                    #photos, taggedCount
+                ),
+            },
+            f:static_text { title = LrView.bind 'estimatedTime' },
+            f:separator  { fill_horizontal = 1 },
+            f:checkbox   { title = 'Include already-tagged images', value = LrView.bind 'includeTagged' },
+        }
+
+        local dialogResult = LrDialogs.presentModalDialog {
+            title      = 'QuickTag',
+            contents   = contents,
+            actionVerb = 'Run',
+        }
+
+        result        = dialogResult == 'ok'
+        includeTagged = props.includeTagged
+    end)
+
+    return result, includeTagged
+end
+
 function Tagger.run()
     local catalog = LrApplication.activeCatalog()
     local photos   = getSelectedPhotos(catalog)
@@ -124,6 +183,22 @@ function Tagger.run()
 
     local taggedCount = countTagged(photos)
     local previews    = generatePreviews(photos)
+
+    local config = readConfig()
+    local shouldRun, includeTagged = showPreRunDialog(photos, taggedCount, config.seconds_per_image or 5)
+    if not shouldRun then return end
+
+    if not includeTagged then
+        local filtered = {}
+        for _, photo in ipairs(photos) do
+            local kws = photo:getRawMetadata('keywords')
+            if not kws or #kws == 0 then
+                table.insert(filtered, photo)
+            end
+        end
+        photos = filtered
+        previews = generatePreviews(photos)
+    end
 
     -- remaining tasks will extend this function
 end
