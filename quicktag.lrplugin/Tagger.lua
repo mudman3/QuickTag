@@ -172,6 +172,25 @@ local function showPreRunDialog(photos, taggedCount, secPerImage)
     return result, includeTagged
 end
 
+local function writeLog(skipped)
+    if #skipped == 0 then return end
+    local logPath = LrPathUtils.child(pluginPath(), 'quicktag.log')
+    local f       = io.open(logPath, 'a')
+    if not f then return end
+    f:write(os.date('%Y-%m-%d %H:%M:%S') .. ' — skipped:\n')
+    for _, path in ipairs(skipped) do
+        f:write('  ' .. path .. '\n')
+    end
+    f:close()
+end
+
+local function applyKeywordsToPhoto(catalog, photo, keywords)
+    for _, word in ipairs(keywords) do
+        local kw = catalog:createKeyword(word, {}, true, nil, true)
+        photo:addKeyword(kw)
+    end
+end
+
 local function callPython(previews, existingKeywords)
     local inputPath  = LrPathUtils.child(tempDir(), 'quicktag_in.json')
     local outputPath = LrPathUtils.child(tempDir(), 'quicktag_out.json')
@@ -251,7 +270,43 @@ function Tagger.run()
         return
     end
 
-    -- remaining tasks will extend this function
+    local photoByPath = {}
+    for _, photo in ipairs(photos) do
+        photoByPath[photo:getRawMetadata('path')] = photo
+    end
+
+    local taggedTotal = 0
+
+    local ok = pcall(function()
+        catalog:withWriteAccessDo('QuickTag', function()
+            for path, keywords in pairs(output.results) do
+                local photo = photoByPath[path]
+                if photo then
+                    applyKeywordsToPhoto(catalog, photo, keywords)
+                    taggedTotal = taggedTotal + 1
+                end
+            end
+        end)
+    end)
+
+    if not ok then
+        LrDialogs.message('QuickTag Error', 'Lightroom could not save keywords. Please try again.', 'critical')
+        return
+    end
+
+    writeLog(output.skipped or {})
+
+    local skippedCount = #(output.skipped or {})
+    local msg
+    if skippedCount > 0 then
+        msg = string.format('Done — %d image%s tagged, %d skipped (see quicktag.log).',
+            taggedTotal, taggedTotal == 1 and '' or 's', skippedCount)
+    else
+        msg = string.format('Done — %d image%s tagged.',
+            taggedTotal, taggedTotal == 1 and '' or 's')
+    end
+
+    LrDialogs.message('QuickTag', msg, 'info')
 end
 
 return Tagger
