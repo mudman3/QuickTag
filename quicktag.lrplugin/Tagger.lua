@@ -172,6 +172,44 @@ local function showPreRunDialog(photos, taggedCount, secPerImage)
     return result, includeTagged
 end
 
+local function callPython(previews, existingKeywords)
+    local inputPath  = LrPathUtils.child(tempDir(), 'quicktag_in.json')
+    local outputPath = LrPathUtils.child(tempDir(), 'quicktag_out.json')
+
+    local inputData = {
+        images            = previews,
+        existing_keywords = existingKeywords,
+        config_path       = configPath(),
+    }
+
+    if not writeJson(inputPath, inputData) then
+        return nil, 'Could not write temp input file.'
+    end
+
+    local cmd = string.format('python "%s" --input "%s" --output "%s"', helperPath(), inputPath, outputPath)
+    os.execute(cmd)
+
+    for _, item in ipairs(previews) do
+        os.remove(item.preview_path)
+    end
+    os.remove(inputPath)
+
+    local testHandle = io.open(outputPath, 'r')
+    if not testHandle then
+        return nil, 'Python did not run. Make sure Python 3 is installed and on your PATH.'
+    end
+    testHandle:close()
+
+    local output = readJson(outputPath)
+    os.remove(outputPath)
+
+    if not output then
+        return nil, 'Could not read results from helper.py.'
+    end
+
+    return output, nil
+end
+
 function Tagger.run()
     local catalog = LrApplication.activeCatalog()
     local photos   = getSelectedPhotos(catalog)
@@ -198,6 +236,19 @@ function Tagger.run()
         end
         photos = filtered
         previews = generatePreviews(photos)
+    end
+
+    local allKeywords     = getAllKeywordNames(catalog)
+    local output, callErr = callPython(previews, allKeywords)
+
+    if callErr then
+        LrDialogs.message('QuickTag Error', callErr, 'critical')
+        return
+    end
+
+    if output.error then
+        LrDialogs.message('QuickTag Error', output.error, 'critical')
+        return
     end
 
     -- remaining tasks will extend this function
