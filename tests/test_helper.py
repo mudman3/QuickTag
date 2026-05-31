@@ -184,3 +184,19 @@ def test_run_skips_image_on_analysis_failure(tmp_path):
     result = json.loads(out_file.read_text())
     assert '/photos/bad.jpg' in result['skipped']
     assert result['error'] is None
+
+
+def test_run_writes_error_when_model_not_found(tmp_path):
+    input_data = {'images': [], 'existing_keywords': [], 'config_path': ''}
+    in_file = tmp_path / 'in.json'
+    in_file.write_text(json.dumps(input_data))
+    out_file = tmp_path / 'out.json'
+
+    config_data = {'model': 'moondream', 'max_keywords': 20, 'seconds_per_image': 5, 'prompt': ''}
+
+    with patch('helper.check_ollama', side_effect=ModelNotFoundError('model not found')), \
+         patch('helper.load_config', return_value=config_data):
+        run(str(in_file), str(out_file))
+
+    result = json.loads(out_file.read_text())
+    assert 'model not found' in result['error']
