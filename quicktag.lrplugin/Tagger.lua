@@ -235,7 +235,13 @@ local function callPython(previews, existingKeywords, config)
     return output, nil
 end
 
+local function dbg(msg)
+    local f = io.open(LrPathUtils.child(pluginPath(), 'debug.log'), 'a')
+    if f then f:write(msg .. '\n') f:close() end
+end
+
 function Tagger.run()
+    dbg('run: start')
     local catalog = LrApplication.activeCatalog()
     local photos   = getSelectedPhotos(catalog)
 
@@ -244,12 +250,14 @@ function Tagger.run()
         return
     end
 
+    dbg('run: photos=' .. #photos)
     local taggedCount = countTagged(photos)
 
     local config = readConfig()
     local shouldRun, includeTagged = showPreRunDialog(photos, taggedCount, config.seconds_per_image or 5)
-    if not shouldRun then return end
+    if not shouldRun then dbg('run: cancelled') return end
 
+    dbg('run: dialog ok, includeTagged=' .. tostring(includeTagged))
     if not includeTagged then
         local filtered = {}
         for _, photo in ipairs(photos) do
@@ -261,9 +269,13 @@ function Tagger.run()
         photos = filtered
     end
 
+    dbg('run: generating previews for ' .. #photos .. ' photos')
     local previews        = generatePreviews(photos)
+    dbg('run: previews done, count=' .. #previews)
     local allKeywords     = getAllKeywordNames(catalog)
+    dbg('run: calling python')
     local output, callErr = callPython(previews, allKeywords, config)
+    dbg('run: python done, callErr=' .. tostring(callErr))
 
     if callErr then
         LrDialogs.message('QuickTag Error', callErr, 'critical')
