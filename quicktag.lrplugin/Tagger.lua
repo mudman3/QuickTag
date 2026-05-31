@@ -192,7 +192,7 @@ local function applyKeywordsToPhoto(catalog, photo, keywords)
     end
 end
 
-local function callPython(previews, existingKeywords)
+local function callPython(previews, existingKeywords, config)
     local inputPath  = LrPathUtils.child(tempDir(), 'quicktag_in.json')
     local outputPath = LrPathUtils.child(tempDir(), 'quicktag_out.json')
 
@@ -206,7 +206,8 @@ local function callPython(previews, existingKeywords)
         return nil, 'Could not write temp input file.'
     end
 
-    local cmd    = string.format('python "%s" --input "%s" --output "%s"', helperPath(), inputPath, outputPath)
+    local pythonExe = config.python_path or 'python'
+    local cmd       = string.format('"%s" "%s" --input "%s" --output "%s"', pythonExe, helperPath(), inputPath, outputPath)
     local handle = io.popen(cmd)
     if handle then
         handle:read('*all')
@@ -262,7 +263,7 @@ function Tagger.run()
 
     local previews        = generatePreviews(photos)
     local allKeywords     = getAllKeywordNames(catalog)
-    local output, callErr = callPython(previews, allKeywords)
+    local output, callErr = callPython(previews, allKeywords, config)
 
     if callErr then
         LrDialogs.message('QuickTag Error', callErr, 'critical')
