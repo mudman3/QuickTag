@@ -1,5 +1,6 @@
 import argparse
 import json
+import ollama
 
 
 def parse_args(args=None):
@@ -39,6 +40,14 @@ def parse_keywords(response_text):
             seen.add(word)
             result.append(word)
     return result
+
+
+def analyze_image(image_path, prompt, model):
+    response = ollama.chat(
+        model=model,
+        messages=[{'role': 'user', 'content': prompt, 'images': [image_path]}]
+    )
+    return response['message']['content']
 
 
 if __name__ == '__main__':

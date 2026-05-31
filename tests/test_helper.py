@@ -2,10 +2,11 @@ import json
 import sys
 import pytest
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / 'quicktag.lrplugin'))
 
-from helper import parse_args, load_input, write_output, build_prompt, parse_keywords
+from helper import parse_args, load_input, write_output, build_prompt, parse_keywords, analyze_image
 
 
 def test_parse_args_requires_input_and_output(tmp_path):
@@ -65,3 +66,20 @@ def test_parse_keywords_deduplicates():
 def test_parse_keywords_ignores_empty_entries():
     result = parse_keywords('mountain,,, sunset,')
     assert result == ['mountain', 'sunset']
+
+
+def test_analyze_image_calls_ollama_with_image(tmp_path):
+    fake_image = tmp_path / 'photo.jpg'
+    fake_image.write_bytes(b'fakejpeg')
+
+    mock_response = {'message': {'content': 'mountain, sunset, golden hour'}}
+
+    with patch('helper.ollama') as mock_ollama:
+        mock_ollama.chat.return_value = mock_response
+        result = analyze_image(str(fake_image), 'describe this', 'moondream')
+
+    mock_ollama.chat.assert_called_once_with(
+        model='moondream',
+        messages=[{'role': 'user', 'content': 'describe this', 'images': [str(fake_image)]}]
+    )
+    assert result == 'mountain, sunset, golden hour'
