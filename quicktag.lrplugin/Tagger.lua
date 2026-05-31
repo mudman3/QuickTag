@@ -23,7 +23,7 @@ local function helperPath()
 end
 
 local function tempDir()
-    return os.getenv('TEMP') or os.getenv('TMP') or pluginPath()
+    return LrPathUtils.getStandardFilePath('temp')
 end
 
 local function readJson(path)
