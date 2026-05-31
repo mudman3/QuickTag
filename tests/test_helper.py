@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / 'quicktag.lrplugin'))
 
-from helper import parse_args, load_input, write_output, build_prompt, parse_keywords, analyze_image, check_ollama, OllamaNotRunningError, ModelNotFoundError
+from helper import parse_args, load_input, write_output, build_prompt, parse_keywords, analyze_image, check_ollama, OllamaNotRunningError, ModelNotFoundError, update_config, run
 
 
 def test_parse_args_requires_input_and_output(tmp_path):
@@ -104,3 +104,83 @@ def test_check_ollama_passes_when_model_present():
     mock_list.return_value = {'models': [{'name': 'moondream:latest'}, {'name': 'llama3:latest'}]}
     with patch('helper.ollama.list', mock_list):
         check_ollama('moondream')  # should not raise
+
+
+def test_update_config_writes_seconds_per_image(tmp_path):
+    config = tmp_path / 'config.json'
+    config.write_text(json.dumps({'model': 'moondream', 'max_keywords': 20, 'seconds_per_image': 5}))
+    update_config(str(config), 3.7)
+    result = json.loads(config.read_text())
+    assert result['seconds_per_image'] == 3.7
+
+
+def test_update_config_silently_ignores_missing_file():
+    update_config('/nonexistent/config.json', 3.7)  # should not raise
+
+
+def test_run_writes_results_for_each_image(tmp_path):
+    preview = tmp_path / 'preview.jpg'
+    preview.write_bytes(b'fakejpeg')
+
+    input_data = {
+        'images': [{'original_path': '/photos/a.jpg', 'preview_path': str(preview)}],
+        'existing_keywords': ['mountain'],
+        'config_path': '',
+    }
+    in_file = tmp_path / 'in.json'
+    in_file.write_text(json.dumps(input_data))
+    out_file = tmp_path / 'out.json'
+
+    config_data = {'model': 'moondream', 'max_keywords': 20, 'seconds_per_image': 5,
+                   'prompt': 'keywords: {existing_keywords} max {max_keywords}'}
+
+    with patch('helper.check_ollama'), \
+         patch('helper.analyze_image', return_value='mountain, sunset'), \
+         patch('helper.load_config', return_value=config_data):
+        run(str(in_file), str(out_file))
+
+    result = json.loads(out_file.read_text())
+    assert result['error'] is None
+    assert result['results']['/photos/a.jpg'] == ['mountain', 'sunset']
+    assert result['skipped'] == []
+
+
+def test_run_writes_error_when_ollama_not_running(tmp_path):
+    input_data = {'images': [], 'existing_keywords': [], 'config_path': ''}
+    in_file = tmp_path / 'in.json'
+    in_file.write_text(json.dumps(input_data))
+    out_file = tmp_path / 'out.json'
+
+    config_data = {'model': 'moondream', 'max_keywords': 20, 'seconds_per_image': 5, 'prompt': ''}
+
+    with patch('helper.check_ollama', side_effect=OllamaNotRunningError('not running')), \
+         patch('helper.load_config', return_value=config_data):
+        run(str(in_file), str(out_file))
+
+    result = json.loads(out_file.read_text())
+    assert 'not running' in result['error']
+
+
+def test_run_skips_image_on_analysis_failure(tmp_path):
+    preview = tmp_path / 'preview.jpg'
+    preview.write_bytes(b'fakejpeg')
+
+    input_data = {
+        'images': [{'original_path': '/photos/bad.jpg', 'preview_path': str(preview)}],
+        'existing_keywords': [],
+        'config_path': '',
+    }
+    in_file = tmp_path / 'in.json'
+    in_file.write_text(json.dumps(input_data))
+    out_file = tmp_path / 'out.json'
+
+    config_data = {'model': 'moondream', 'max_keywords': 20, 'seconds_per_image': 5, 'prompt': '{existing_keywords} {max_keywords}'}
+
+    with patch('helper.check_ollama'), \
+         patch('helper.analyze_image', side_effect=Exception('GPU error')), \
+         patch('helper.load_config', return_value=config_data):
+        run(str(in_file), str(out_file))
+
+    result = json.loads(out_file.read_text())
+    assert '/photos/bad.jpg' in result['skipped']
+    assert result['error'] is None

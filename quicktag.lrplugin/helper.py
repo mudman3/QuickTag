@@ -1,5 +1,6 @@
 import argparse
 import json
+import time
 import ollama
 
 
@@ -73,5 +74,66 @@ def analyze_image(image_path, prompt, model):
     return response['message']['content']
 
 
+def load_config(config_path):
+    try:
+        with open(config_path) as f:
+            return json.load(f)
+    except Exception:
+        return {'model': 'moondream', 'max_keywords': 20, 'seconds_per_image': 5, 'prompt': ''}
+
+
+def update_config(config_path, seconds_per_image):
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        config['seconds_per_image'] = round(seconds_per_image, 1)
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+    except Exception:
+        pass
+
+
+def run(input_path, output_path):
+    data = load_input(input_path)
+    images = data.get('images', [])
+    existing_keywords = data.get('existing_keywords', [])
+    config_path = data.get('config_path', '')
+
+    config = load_config(config_path)
+    model = config.get('model', 'moondream')
+    max_keywords = config.get('max_keywords', 20)
+    prompt_template = config.get('prompt', '')
+
+    try:
+        check_ollama(model)
+    except (OllamaNotRunningError, ModelNotFoundError) as e:
+        write_output(output_path, {}, [], str(e), 0)
+        return
+
+    prompt = build_prompt(existing_keywords, max_keywords, prompt_template)
+    results = {}
+    skipped = []
+    times = []
+
+    for item in images:
+        original_path = item['original_path']
+        preview_path = item['preview_path']
+        try:
+            start = time.time()
+            response = analyze_image(preview_path, prompt, model)
+            elapsed = time.time() - start
+            times.append(elapsed)
+            results[original_path] = parse_keywords(response)
+        except Exception:
+            skipped.append(original_path)
+
+    avg_time = round(sum(times) / len(times), 1) if times else 0
+    if config_path and avg_time > 0:
+        update_config(config_path, avg_time)
+
+    write_output(output_path, results, skipped, None, avg_time)
+
+
 if __name__ == '__main__':
     args = parse_args()
+    run(args.input, args.output)
