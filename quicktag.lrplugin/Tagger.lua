@@ -6,6 +6,7 @@ local LrView            = import 'LrView'
 local LrBinding         = import 'LrBinding'
 local LrFunctionContext = import 'LrFunctionContext'
 local LrTasks           = import 'LrTasks'
+local LrFileUtils       = import 'LrFileUtils'
 local json              = require 'json'
 
 local Tagger = {}
@@ -205,13 +206,17 @@ local function callPython(previews, existingKeywords)
         return nil, 'Could not write temp input file.'
     end
 
-    local cmd = string.format('python "%s" --input "%s" --output "%s"', helperPath(), inputPath, outputPath)
-    os.execute(cmd)
+    local cmd    = string.format('python "%s" --input "%s" --output "%s"', helperPath(), inputPath, outputPath)
+    local handle = io.popen(cmd)
+    if handle then
+        handle:read('*all')
+        handle:close()
+    end
 
     for _, item in ipairs(previews) do
-        os.remove(item.preview_path)
+        LrFileUtils.delete(item.preview_path)
     end
-    os.remove(inputPath)
+    LrFileUtils.delete(inputPath)
 
     local testHandle = io.open(outputPath, 'r')
     if not testHandle then
@@ -220,7 +225,7 @@ local function callPython(previews, existingKeywords)
     testHandle:close()
 
     local output = readJson(outputPath)
-    os.remove(outputPath)
+    LrFileUtils.delete(outputPath)
 
     if not output then
         return nil, 'Could not read results from helper.py.'
