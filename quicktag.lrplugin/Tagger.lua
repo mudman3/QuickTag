@@ -5,6 +5,7 @@ local LrPathUtils       = import 'LrPathUtils'
 local LrView            = import 'LrView'
 local LrBinding         = import 'LrBinding'
 local LrFunctionContext = import 'LrFunctionContext'
+local LrTasks           = import 'LrTasks'
 local json              = require 'json'
 
 local Tagger = {}
@@ -88,7 +89,6 @@ local function countTagged(photos)
 end
 
 local function generatePreviews(photos)
-    local LrTasks = import 'LrTasks'
     local pending  = #photos
     local previews = {}
 
