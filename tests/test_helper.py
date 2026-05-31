@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent / 'quicktag.lrplugin'))
 
-from helper import parse_args, load_input, write_output, build_prompt, parse_keywords, analyze_image
+from helper import parse_args, load_input, write_output, build_prompt, parse_keywords, analyze_image, check_ollama, OllamaNotRunningError, ModelNotFoundError
 
 
 def test_parse_args_requires_input_and_output(tmp_path):
@@ -83,3 +83,24 @@ def test_analyze_image_calls_ollama_with_image(tmp_path):
         messages=[{'role': 'user', 'content': 'describe this', 'images': [str(fake_image)]}]
     )
     assert result == 'mountain, sunset, golden hour'
+
+
+def test_check_ollama_raises_when_not_running():
+    with patch('helper.ollama.list', side_effect=Exception('connection refused')):
+        with pytest.raises(OllamaNotRunningError):
+            check_ollama('moondream')
+
+
+def test_check_ollama_raises_when_model_missing():
+    mock_list = MagicMock()
+    mock_list.return_value = {'models': [{'name': 'llama3:latest'}]}
+    with patch('helper.ollama.list', mock_list):
+        with pytest.raises(ModelNotFoundError):
+            check_ollama('moondream')
+
+
+def test_check_ollama_passes_when_model_present():
+    mock_list = MagicMock()
+    mock_list.return_value = {'models': [{'name': 'moondream:latest'}, {'name': 'llama3:latest'}]}
+    with patch('helper.ollama.list', mock_list):
+        check_ollama('moondream')  # should not raise

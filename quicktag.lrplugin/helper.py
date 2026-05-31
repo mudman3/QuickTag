@@ -3,6 +3,29 @@ import json
 import ollama
 
 
+class OllamaNotRunningError(Exception):
+    pass
+
+
+class ModelNotFoundError(Exception):
+    pass
+
+
+def check_ollama(model):
+    try:
+        response = ollama.list()
+    except Exception:
+        raise OllamaNotRunningError(
+            "QuickTag couldn't connect to Ollama. Make sure Ollama is running."
+        )
+    models = response.get('models', [])
+    installed = [m['name'].split(':')[0] for m in models]
+    if model not in installed:
+        raise ModelNotFoundError(
+            f"Model '{model}' not found. Run: ollama pull {model}"
+        )
+
+
 def parse_args(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', required=True)
