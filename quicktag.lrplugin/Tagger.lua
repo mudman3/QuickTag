@@ -205,7 +205,7 @@ local function callPython(previews, existingKeywords)
         return nil, 'Could not write temp input file.'
     end
 
-    local cmd = string.format('start "" /B /WAIT python "%s" --input "%s" --output "%s"', helperPath(), inputPath, outputPath)
+    local cmd = string.format('python "%s" --input "%s" --output "%s"', helperPath(), inputPath, outputPath)
     os.execute(cmd)
 
     for _, item in ipairs(previews) do
