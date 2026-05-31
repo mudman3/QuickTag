@@ -84,6 +84,35 @@ local function countTagged(photos)
     return count
 end
 
+local function generatePreviews(photos)
+    local LrTasks = import 'LrTasks'
+    local pending  = #photos
+    local previews = {}
+
+    for i, photo in ipairs(photos) do
+        local origPath    = photo:getRawMetadata('path')
+        local previewPath = LrPathUtils.child(tempDir(), string.format('quicktag_preview_%d.jpg', i))
+
+        photo:requestJpegThumbnail(1024, 1024, function(jpeg)
+            if jpeg then
+                local f = io.open(previewPath, 'wb')
+                if f then
+                    f:write(jpeg)
+                    f:close()
+                    table.insert(previews, { original_path = origPath, preview_path = previewPath })
+                end
+            end
+            pending = pending - 1
+        end)
+    end
+
+    while pending > 0 do
+        LrTasks.sleep(0.05)
+    end
+
+    return previews
+end
+
 function Tagger.run()
     local catalog = LrApplication.activeCatalog()
     local photos   = getSelectedPhotos(catalog)
@@ -92,6 +121,9 @@ function Tagger.run()
         LrDialogs.message('QuickTag', 'Please select at least one photo or folder.', 'info')
         return
     end
+
+    local taggedCount = countTagged(photos)
+    local previews    = generatePreviews(photos)
 
     -- remaining tasks will extend this function
 end
