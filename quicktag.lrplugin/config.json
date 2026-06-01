@@ -1,7 +1,7 @@
 {
-  "python_path": "C:\\Python313\\python.exe",
+  "python_path": "python",
   "model": "llava",
   "max_keywords": 10,
-  "seconds_per_image": 1.1,
-  "prompt": "Describe this photo using comma-separated keywords only. Include vehicles, people, animals, buildings, nature, weather, lighting, colours, and mood. No sentences. Avoid synonyms \u00e2\u20ac\u201d pick the single most specific word for each concept. Max {max_keywords} keywords."
+  "seconds_per_image": 10,
+  "prompt": "Describe this photo using comma-separated keywords only. Include vehicles, people, animals, buildings, nature, weather, lighting, colours, and mood. No sentences. Avoid synonyms — pick the single most specific word for each concept. Max {max_keywords} keywords."
 }

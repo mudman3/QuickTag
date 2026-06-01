@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+quicktag.lrplugin/debug.log
+quicktag.lrplugin/helper.log
+test_in.json
+test_out.json
+*.zip
