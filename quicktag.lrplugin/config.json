@@ -1,7 +1,7 @@
 {
   "python_path": "C:\\Python313\\python.exe",
-  "model": "moondream",
-  "max_keywords": 20,
-  "seconds_per_image": 1.6,
-  "prompt": "Analyze this photo and return a list of descriptive keywords only. Focus on: subject, environment, lighting, weather, mood, colours, time of day. Use the most common, concise English term for each concept. Avoid synonyms \u00e2\u20ac\u201d pick one word and use it consistently. Prefer single words over phrases where possible. (e.g. use \"sunny\" not \"full sun\", \"waterfall\" not \"cascading water\") Where possible, reuse keywords from this existing list rather than inventing new ones: {existing_keywords} Return keywords as a comma-separated list. No sentences. No explanations. Max {max_keywords} keywords."
+  "model": "llava",
+  "max_keywords": 10,
+  "seconds_per_image": 4.9,
+  "prompt": "Describe this photo using comma-separated keywords only. Include vehicles, people, animals, buildings, nature, weather, lighting, colours, and mood. No sentences. Max {max_keywords} keywords."
 }

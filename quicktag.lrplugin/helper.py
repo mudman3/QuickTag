@@ -61,27 +61,98 @@ def write_output(output_path, results, skipped, error, seconds_per_image):
 
 def build_prompt(existing_keywords, max_keywords, template):
     existing = ', '.join(existing_keywords) if existing_keywords else 'none yet'
-    return template.replace('{existing_keywords}', existing).replace('{max_keywords}', str(max_keywords))
+    return (template
+            .replace('{existing_keywords}', existing)
+            .replace('{max_keywords}', str(max_keywords)))
 
+
+_STOP_WORDS = {
+    # articles / conjunctions / prepositions
+    'a', 'an', 'the', 'and', 'or', 'but', 'with', 'of', 'in', 'on', 'at',
+    'to', 'for', 'by', 'as', 'from', 'into', 'along', 'through', 'towards',
+    'above', 'below', 'around', 'between', 'across', 'over', 'under',
+    'near', 'beside', 'behind', 'front',
+    # positional / relational
+    'side', 'sides', 'either', 'both', 'left', 'right', 'top', 'bottom',
+    'middle', 'center', 'centre', 'back', 'each', 'other',
+    'background', 'foreground', 'distance', 'horizon',
+    # pronouns / determiners
+    'it', 'its', 'this', 'that', 'these', 'those', 'there', 'their',
+    'they', 'them', 'we', 'our', 'which', 'where', 'what',
+    # meta-words (about the photo itself)
+    'image', 'photo', 'picture', 'photograph', 'scene', 'shot', 'view',
+    # verbs and participles
+    'is', 'are', 'was', 'were', 'be', 'been', 'has', 'have', 'had',
+    'can', 'could', 'appears', 'appear', 'seems', 'seem', 'depicts',
+    'shows', 'show', 'creates', 'create', 'giving', 'adding', 'lining',
+    'winding', 'casting', 'extending', 'leads', 'leading', 'visible',
+    'gives', 'makes', 'make', 'extend', 'taken', 'showing', 'featuring',
+    # adverbs / qualifiers
+    'no', 'not', 'some', 'also', 'almost', 'very', 'quite', 'just',
+    'while', 'where', 'when', 'here',
+}
 
 def parse_keywords(response_text):
-    parts = response_text.split(',')
+    import re
+
+    # Clean the text
+    text = re.sub(r'[^\w\s\'-]', ' ', response_text.lower()).strip()
+    tokens = text.split()
+
     seen = set()
     result = []
-    for part in parts:
-        word = part.strip().lower()
-        if word and word not in seen:
-            seen.add(word)
-            result.append(word)
+
+    def add(phrase):
+        phrase = phrase.strip()
+        if len(phrase) > 1 and phrase not in seen:
+            seen.add(phrase)
+            result.append(phrase)
+
+    # First try comma-split (model may have followed instructions)
+    if ',' in response_text:
+        for part in response_text.split(','):
+            phrase = re.sub(r'[^\w\s\'-]', '', part).strip().lower()
+            # Strip leading stop words (e.g. "and sky" → "sky")
+            words = phrase.split()
+            while words and words[0] in _STOP_WORDS:
+                words = words[1:]
+            phrase = ' '.join(words)
+            if phrase:
+                add(phrase)
+        return result
+
+    # No commas — sentence mode: group consecutive meaningful tokens into
+    # 1-2 word phrases (compound nouns like "dirt road", "overcast sky")
+    i = 0
+    while i < len(tokens):
+        word = re.sub(r"[^\w'-]", '', tokens[i])
+        if not word or word in _STOP_WORDS or len(word) <= 2:
+            i += 1
+            continue
+        # Look ahead: can we form a 2-word phrase?
+        if i + 1 < len(tokens):
+            next_word = re.sub(r"[^\w'-]", '', tokens[i + 1])
+            if next_word and next_word not in _STOP_WORDS and len(next_word) > 2:
+                add(word + ' ' + next_word)
+                i += 2
+                continue
+        add(word)
+        i += 1
+
     return result
 
 
 def analyze_image(image_path, prompt, model):
-    response = ollama.chat(
+    with open(image_path, 'rb') as f:
+        image_bytes = f.read()
+    response = ollama.generate(
         model=model,
-        messages=[{'role': 'user', 'content': prompt, 'images': [image_path]}]
+        prompt=prompt,
+        images=[image_bytes],
+        stream=False,
     )
-    return response['message']['content']
+    text = response.response if hasattr(response, 'response') else response['response']
+    return text.strip()
 
 
 def load_config(config_path):
