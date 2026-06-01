@@ -309,27 +309,15 @@ function Tagger.run()
 
     local taggedTotal = 0
 
-    local ok = pcall(function()
-        catalog:withWriteAccessDo('QuickTag', function()
-            for path, keywords in pairs(output.results) do
-                local photo = photoByPath[path]
-                if photo then
-                    applyKeywordsToPhoto(catalog, photo, keywords)
-                    taggedTotal = taggedTotal + 1
-                end
+    catalog:withWriteAccessDo('QuickTag', function()
+        for path, keywords in pairs(output.results) do
+            local photo = photoByPath[path]
+            if photo then
+                applyKeywordsToPhoto(catalog, photo, keywords)
+                taggedTotal = taggedTotal + 1
             end
-        end)
+        end
     end)
-
-    if not ok then
-        LrDialogs.message('QuickTag Error', 'Lightroom could not save keywords. Please try again.', 'critical')
-        return
-    end
-
-    if ok and taggedTotal == 0 and next(output.results) ~= nil then
-        LrDialogs.message('QuickTag Error', 'Lightroom could not save keywords — the catalog may be read-only. Please try again.', 'critical')
-        return
-    end
 
     writeLog(output.skipped or {})
 
