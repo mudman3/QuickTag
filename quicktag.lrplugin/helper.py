@@ -152,6 +152,8 @@ def analyze_image(image_path, prompt, model):
         stream=False,
     )
     text = response.response if hasattr(response, 'response') else response['response']
+    import sys
+    print(f"[{image_path}] {repr(text.strip())}", file=sys.stderr)
     return text.strip()
 
 

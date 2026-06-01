@@ -103,9 +103,10 @@ local function showPreRunDialog(photos, taggedCount, secPerImage)
         props.includeTagged = false
         local untaggedCount = #photos - taggedCount
 
+        local BATCH_OVERHEAD = 10 -- Python startup + Ollama model load, amortized
         local function updateEstimate()
             local count         = props.includeTagged and #photos or untaggedCount
-            props.estimatedTime = 'Estimated time: ~' .. formatTime(count * secPerImage)
+            props.estimatedTime = 'Estimated time: ~' .. formatTime(count * secPerImage + BATCH_OVERHEAD)
         end
 
         updateEstimate()
@@ -158,9 +159,10 @@ local function callPython(previews, existingKeywords, config)
     local batPath   = LrPathUtils.child(tempDir(), 'quicktag_run.bat')
     local batFile   = io.open(batPath, 'w')
     if not batFile then return nil, 'Could not write temp batch file.' end
+    local logPath = LrPathUtils.child(pluginPath(), 'helper.log')
     batFile:write('@echo off\n')
-    batFile:write(string.format('"%s" "%s" --input "%s" --output "%s"\n',
-        pythonExe, helperPath(), inputPath, outputPath))
+    batFile:write(string.format('"%s" "%s" --input "%s" --output "%s" >> "%s" 2>&1\n',
+        pythonExe, helperPath(), inputPath, outputPath, logPath))
     batFile:close()
 
     local h = io.popen('"' .. batPath .. '"')
