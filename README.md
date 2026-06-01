@@ -44,7 +44,7 @@ pip install ollama
 
 ## Installation
 
-1. Download `quicktag.lrplugin.zip` from the [latest release](../../releases/latest)
+1. Download `quicktag-v1.0.0.zip` from the [latest release](https://github.com/mudman3/QuickTag/releases/latest)
 2. Unzip it — you'll get a folder named `quicktag.lrplugin`
 3. In Lightroom Classic: **File → Plug-in Manager → Add**
 4. Navigate to and select the `quicktag.lrplugin` folder
