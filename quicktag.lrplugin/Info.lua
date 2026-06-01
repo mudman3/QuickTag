@@ -6,8 +6,9 @@ return {
     VERSION = { major = 1, minor = 0, revision = 0 },
     LrLibraryMenuItems = {
         {
-            title = 'QuickTag Selected Images',
-            file = 'MenuItem.lua',
+            title             = 'QuickTag Selected Images',
+            file              = 'MenuItem.lua',
+            LrNeedsWriteAccess = true,
         },
     },
 }
