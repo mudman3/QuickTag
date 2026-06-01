@@ -1,16 +1,15 @@
 -- Tagger.lua
-local LrApplication = import 'LrApplication'
-local LrDialogs     = import 'LrDialogs'
-local LrPathUtils   = import 'LrPathUtils'
-local LrFileUtils   = import 'LrFileUtils'
-local json          = require 'json'
+local LrApplication     = import 'LrApplication'
+local LrBinding         = import 'LrBinding'
+local LrDialogs         = import 'LrDialogs'
+local LrFileUtils       = import 'LrFileUtils'
+local LrFunctionContext = import 'LrFunctionContext'
+local LrPathUtils       = import 'LrPathUtils'
+local LrTasks           = import 'LrTasks'
+local LrView            = import 'LrView'
+local json              = require 'json'
 
 local Tagger = {}
-
-local RAW_EXTENSIONS = {
-    nef=true, cr2=true, cr3=true, raf=true, arw=true, orf=true,
-    rw2=true, dng=true, pef=true, srw=true, x3f=true, kdc=true,
-}
 
 local function pluginPath() return _PLUGIN.path end
 local function configPath() return LrPathUtils.child(pluginPath(), 'config.json') end
@@ -63,20 +62,29 @@ local function countTagged(photos)
     return n
 end
 
--- JPEG/TIFF/PNG: pass original path directly to Python.
--- RAW files are excluded — Python cannot open them; they appear in skipped.
-local function buildImageList(photos)
-    local images, skipped = {}, {}
-    for _, photo in ipairs(photos) do
-        local path = photo:getRawMetadata('path')
-        local ext  = LrPathUtils.extension(path):lower()
-        if RAW_EXTENSIONS[ext] then
-            table.insert(skipped, path)
-        else
-            table.insert(images, { original_path = path, preview_path = path })
-        end
+local function generatePreviews(photos)
+    local pending  = #photos
+    local previews = {}
+
+    for i, photo in ipairs(photos) do
+        local origPath    = photo:getRawMetadata('path')
+        local previewPath = LrPathUtils.child(tempDir(), string.format('quicktag_preview_%d.jpg', i))
+
+        photo:requestJpegThumbnail(1024, 1024, function(jpeg)
+            if jpeg then
+                local f = io.open(previewPath, 'wb')
+                if f then
+                    f:write(jpeg)
+                    f:close()
+                    table.insert(previews, { original_path = origPath, preview_path = previewPath })
+                end
+            end
+            pending = pending - 1
+        end)
     end
-    return images, skipped
+
+    while pending > 0 do LrTasks.sleep(0.05) end
+    return previews
 end
 
 local function formatTime(s)
@@ -88,13 +96,45 @@ local function formatTime(s)
 end
 
 local function showPreRunDialog(photos, taggedCount, secPerImage)
-    local untagged = #photos - taggedCount
-    local info = string.format(
-        '%d image%s selected, %d already have keywords.\nEstimated time: ~%s',
-        #photos, #photos == 1 and '' or 's', taggedCount,
-        formatTime(untagged * secPerImage)
-    )
-    return LrDialogs.confirm('QuickTag', info, 'Run') == 'ok'
+    local result, includeTagged
+
+    LrFunctionContext.callWithContext('quickTagDialog', function(context)
+        local props         = LrBinding.makePropertyTable(context)
+        props.includeTagged = false
+        local untaggedCount = #photos - taggedCount
+
+        local function updateEstimate()
+            local count         = props.includeTagged and #photos or untaggedCount
+            props.estimatedTime = 'Estimated time: ~' .. formatTime(count * secPerImage)
+        end
+
+        updateEstimate()
+        props:addObserver('includeTagged', context, updateEstimate)
+
+        local f        = LrView.osFactory()
+        local contents = f:column {
+            bind_to_object = props,
+            spacing        = f:dialog_spacing(),
+            f:static_text {
+                title = string.format('%d image%s selected (%d already have keywords)',
+                    #photos, #photos == 1 and '' or 's', taggedCount),
+            },
+            f:static_text { title = LrView.bind 'estimatedTime' },
+            f:separator   { fill_horizontal = 1 },
+            f:checkbox    { title = 'Include already-tagged images', value = LrView.bind 'includeTagged' },
+        }
+
+        local dialogResult = LrDialogs.presentModalDialog {
+            title      = 'QuickTag',
+            contents   = contents,
+            actionVerb = 'Run',
+        }
+
+        result        = dialogResult == 'ok'
+        includeTagged = props.includeTagged
+    end)
+
+    return result, includeTagged
 end
 
 local function writeLog(skipped)
@@ -106,11 +146,11 @@ local function writeLog(skipped)
     f:close()
 end
 
-local function callPython(images, existingKeywords, config)
+local function callPython(previews, existingKeywords, config)
     local inputPath  = LrPathUtils.child(tempDir(), 'quicktag_in.json')
     local outputPath = LrPathUtils.child(tempDir(), 'quicktag_out.json')
 
-    if not writeJson(inputPath, { images=images, existing_keywords=existingKeywords, config_path=configPath() }) then
+    if not writeJson(inputPath, { images=previews, existing_keywords=existingKeywords, config_path=configPath() }) then
         return nil, 'Could not write temp input file.'
     end
 
@@ -126,6 +166,8 @@ local function callPython(images, existingKeywords, config)
     local h = io.popen('"' .. batPath .. '"')
     if h then h:read('*all'); h:close() end
     LrFileUtils.delete(batPath)
+
+    for _, item in ipairs(previews) do LrFileUtils.delete(item.preview_path) end
     LrFileUtils.delete(inputPath)
 
     local th = io.open(outputPath, 'r')
@@ -147,29 +189,30 @@ function Tagger.run()
         return
     end
 
-    local taggedCount = countTagged(photos)
-    local config      = readConfig()
+    local taggedCount          = countTagged(photos)
+    local config               = readConfig()
+    local shouldRun, includeTagged = showPreRunDialog(photos, taggedCount, config.seconds_per_image or 5)
+    if not shouldRun then return end
 
-    if not showPreRunDialog(photos, taggedCount, config.seconds_per_image or 5) then return end
-
-    local filtered = {}
-    for _, photo in ipairs(photos) do
-        local kws = photo:getRawMetadata('keywords')
-        if not kws or #kws == 0 then table.insert(filtered, photo) end
+    if not includeTagged then
+        local filtered = {}
+        for _, photo in ipairs(photos) do
+            local kws = photo:getRawMetadata('keywords')
+            if not kws or #kws == 0 then table.insert(filtered, photo) end
+        end
+        photos = filtered
     end
-    photos = filtered
 
-    local images, rawSkipped = buildImageList(photos)
-
-    if #images == 0 then
-        LrDialogs.message('QuickTag', 'No supported images to process. RAW files cannot be tagged directly.', 'info')
+    if #photos == 0 then
+        LrDialogs.message('QuickTag', 'No untagged images to process.', 'info')
         return
     end
 
-    local output, callErr = callPython(images, getAllKeywordNames(catalog), config)
+    local previews             = generatePreviews(photos)
+    local output, callErr      = callPython(previews, getAllKeywordNames(catalog), config)
 
-    if callErr then LrDialogs.message('QuickTag Error', callErr, 'critical') return end
-    if output.error then LrDialogs.message('QuickTag Error', output.error, 'critical') return end
+    if callErr        then LrDialogs.message('QuickTag Error', callErr, 'critical') return end
+    if output.error   then LrDialogs.message('QuickTag Error', output.error, 'critical') return end
     if not output.results then LrDialogs.message('QuickTag Error', 'Helper returned no results.', 'critical') return end
 
     local photoByPath = {}
@@ -191,14 +234,13 @@ function Tagger.run()
         end
     end, { timeout = 30 })
 
-    local allSkipped = rawSkipped
-    for _, p in ipairs(output.skipped or {}) do table.insert(allSkipped, p) end
-    writeLog(allSkipped)
+    writeLog(output.skipped or {})
 
+    local skippedCount = #(output.skipped or {})
     local msg
-    if #allSkipped > 0 then
+    if skippedCount > 0 then
         msg = string.format('Done — %d image%s tagged, %d skipped (see quicktag.log).',
-            taggedTotal, taggedTotal == 1 and '' or 's', #allSkipped)
+            taggedTotal, taggedTotal == 1 and '' or 's', skippedCount)
     else
         msg = string.format('Done — %d image%s tagged.',
             taggedTotal, taggedTotal == 1 and '' or 's')
